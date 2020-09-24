@@ -1,0 +1,88 @@
+version: "3.8"
+services:
+  # This is capible to relay via gmail, Amazon SES, or generic relays
+  # See: https://hub.docker.com/r/namshi/smtp
+  mail:
+    image: namshi/smtp
+
+  redis:
+    image: redis:5.0.6
+
+  db:
+    image: mysql:8.0.19
+    command: --default-authentication-plugin=mysql_native_password
+    container_name: MySQL-DB
+    restart: unless-stopped
+    environment:
+      - "MYSQL_USER=misp" 
+      - "MYSQL_PASSWORD=example"
+      - "MYSQL_ROOT_PASSWORD=password"
+      - "MYSQL_DATABASE=misp"
+    volumes:
+      - mysql_data:/var/lib/mysql  #Mysql DB data persistence
+
+  misp:
+    image: coolacid/misp-docker:core-latest
+    container_name: MISP
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - db
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "./server-configs/:/var/www/MISP/app/Config/"
+      - "./logs/:/var/www/MISP/app/tmp/logs/"
+      - "./files/:/var/www/MISP/app/files"
+      - "./server/files/etc/nginx/misp80-noredir:/etc/nginx/sites-available/misp" #Enforce the usage of http
+#      - "./ssl/:/etc/nginx/certs" #Mount your SSL files
+#      - "./examples/custom-entrypoint.sh:/custom-entrypoint.sh" # Use a custom entrypoint.sh for MISP image
+    environment:
+      - "HOSTNAME=http://localhost" #Change it with your HOSTNAME 
+      - "REDIS_FQDN=redis"
+      - "INIT=true"             # Initialze MISP, things includes, attempting to import SQL and the Files DIR
+      - "CRON_USER_ID=1"        # The MISP user ID to run cron jobs as
+#      - "SYNCSERVERS=1 2 3 4"  # The MISP Feed servers to sync in the cron job
+     ## Database Configuration (And their defaults) ##
+#      - "MYSQL_HOST=db"
+#      - "MYSQL_USER=misp"
+#      - "MYSQL_PASSWORD=example"
+#      - "MYSQL_DATABASE=misp"
+      # Optional Settings
+      - "NOREDIR=true" # Do not redirect port 80
+#      - "DISIPV6=true" # Disable IPV6 in nginx
+      - "SECURESSL=false" # Enable higher security SSL in nginx
+  misp-modules:
+    image: coolacid/misp-docker:modules-latest
+    container_name: MISP-modules
+    restart: unless-stopped
+    environment:
+      - "REDIS_BACKEND=redis"
+    depends_on:
+      - redis
+      - db
+  thehive:
+    image: thehivemisp
+    container_name: TheHive4
+    restart: unless-stopped
+    depends_on:
+      - cassandra
+    ports:
+      - "0.0.0.0:9000:9000"
+#    volumes:
+#      - ./conf/application.conf:/etc/thehive/application.conf   
+#      - /path/to/thehive/files:/opt/thp_data/files/thehive # For data persistence
+    command: --cql-hostnames cassandra --storage-directory /opt/thp_data/files/thehive --config-misp 
+  cassandra:
+    image: cassandra
+    container_name: Cassandra-TH4
+    restart: unless-stopped
+    environment: 
+      - CASSANDRA_CLUSTER_NAME="thp"    
+#    volumes:
+#       - ./conf/cassandra.yaml:/etc/cassandra/cassandra.yaml
+#       -/your/path:/var/lib/cassandra   #For data persistence
+
+volumes:
+    mysql_data:

@@ -1,0 +1,66 @@
+version: "3.8"
+services:
+  cassandra:
+    image: cassandra
+#    volumes:
+#       - ./conf/cassandra.yaml:/etc/cassandra/cassandra.yaml
+#       -/your/path:/var/lib/cassandra   #For data persistence	
+    container_name: Cassandra-TH4
+    restart: unless-stopped
+    environment: 
+      - CASSANDRA_CLUSTER_NAME="thp"    
+    networks:
+      - thehivenet
+  elasticsearch:
+    image: elasticsearch:6.8.0
+    container_name: elasticsearch-Cortex
+    restart: unless-stopped
+    environment:
+      - http.host=0.0.0.0
+      - discovery.type=single-node
+      - cluster.name=hive
+      - script.allowed_types=inline
+      - thread_pool.index.queue_size=100000
+      - thread_pool.search.queue_size=100000
+      - thread_pool.bulk.queue_size=100000    
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "0.0.0.0:9200:9200"
+#    volumes:
+#      - /your/path:/var/lib/elasticsearch
+    networks:
+      - cortexnet
+      
+  cortex:
+    image: thehiveproject/cortex:3.0.1
+    container_name: Cortex
+    depends_on:
+      - elasticsearch
+    ports:
+      - "0.0.0.0:9001:9001"
+    restart: unless-stopped
+    networks:
+      - cortexnet
+      - default
+  thehive:
+    image: thehive4local
+    depends_on:
+      - cassandra
+      - cortex
+    container_name: TheHive4
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:9000:9000"
+#    volumes:
+#      - ./conf/application.conf:/etc/thehive/application.conf   
+#      - /path/to/thehive/files:/opt/thp_data/files/thehive # For data persistence
+    networks:
+      - thehivenet
+      - default
+    command: --cql-hostnames cassandra --storage-directory /opt/thp_data/files/thehive
+networks:
+  thehivenet:
+  cortexnet:
